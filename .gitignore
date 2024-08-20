@@ -21,3 +21,6 @@ docs/generated/
 # pytest-cov
 .coverage
 coverage
+# pixi environments
+.pixi
+*.egg-info
