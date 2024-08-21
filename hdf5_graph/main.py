@@ -20,7 +20,9 @@ from pathlib import Path
 
 def convert_value_to_cypher(dataset):
     try:
-        if not dataset.shape:
+        if dataset.dtype.str == '|O':  # first strings, because also true in 2nd if
+            return dataset.asstr()[()]
+        elif not dataset.shape and not dataset._is_empty:
             return dataset[()]
         else:
             return None
@@ -44,7 +46,8 @@ def visit(name, object):
     elif isinstance(object, h5py.Dataset):
         # Do sth!
         # add_dataset_to_neo4j(session, object)
-        if name.split("/")[-1] in ["macrofail", "Spline_Interp", "datapoints", "dt", "ca", "ma", "jb"]:
+        # if name.split("/")[-1] in ["macrofail", "Spline_Interp", "datapoints", "dt", "ca", "ma", "jb"]:
+        if "/Spline/" not in object.name:
             temp = {
                 "parent" :object.parent.name.split("/")[1],
                 "obj_name":object.name.split("/")[-1],
