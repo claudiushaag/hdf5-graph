@@ -42,8 +42,8 @@ RETURN d.hdf5_path
 ```
 Return all datapoints hdf5 paths where ca=0.3 and which were identified as the first curve
 ```Cypher
-MATCH (d:Dataset{name:"datapoint"})-[]->(e:Experiment)-[]->(c:Dataset{name:"ca",value:0.3})
-WHERE d.hdf5_path CONTAINS '\Curve_0\'
+MATCH (d:Dataset{name:"datapoints"})<-[:holds]-(e:Experiment)-[:holds]->(c:Dataset{name:"dt",value:0.00025})
+WHERE d.hdf5_path CONTAINS "Curve_1"
 RETURN d.hdf5_path
 ```
 

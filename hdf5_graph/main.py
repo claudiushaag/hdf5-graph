@@ -47,9 +47,19 @@ def visit(name, object):
         if name.split("/")[-1] in ["macrofail", "Spline_Interp", "datapoints", "dt", "ca", "ma", "jb"]:
             result=driver.execute_query("""
             MATCH (e:Experiment)
-            WHERE $parent CONTAINS e.hdf5_path
-            CREATE (e)-[:holds]->(dset:Dataset {name: $obj_name, hdf5_path:$hdf5_path, value:$value})
-            """,parent=object.parent.name,
+            WHERE $parent = e.name
+            FOREACH (ignoreMe IN CASE WHEN $value IS NULL THEN [1] ELSE [] END |
+                CREATE (e)-[:holds]->(dset:Dataset {name: $obj_name, hdf5_path: $hdf5_path})
+                // CREATE (dset:Dataset {name: $obj_name, hdf5_path: $hdf5_path})
+            )
+            FOREACH (ignoreMe IN CASE WHEN $value IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (dset:Dataset {name: $obj_name, value: $value})
+                    ON CREATE
+                        SET dset.hdf5_path = $hdf5_path
+                // MATCH (dset:Dataset {name: $obj_name, value: $value})
+                CREATE (e)-[:holds]->(dset)
+            )
+            """,parent=object.parent.name.split("/")[1],
             obj_name=object.name.split("/")[-1],
             hdf5_path=object.name,
             value=convert_value_to_cypher(object))
@@ -74,25 +84,6 @@ if __name__ == "__main__":
     with GraphDatabase.driver(URI, auth=AUTH) as driver:
         driver.verify_connectivity()
 
-        # # Get the name of all 42 year-olds
-        # records, summary, keys = driver.execute_query(
-        #     """MATCH (a:Person {name:'Tom Hanks'})-[:ACTED_IN]->(m)<-[:ACTED_IN]-(coActors),
-        #         (coActors)-[:ACTED_IN]->(m2)<-[:ACTED_IN]-(cocoActors)
-        #     WHERE NOT (a)-[:ACTED_IN]->()<-[:ACTED_IN]-(cocoActors) AND a <> cocoActors
-        #     RETURN cocoActors.name AS Recommended, count(*) AS Strength ORDER BY Strength DESC""",
-        #     # age=42,
-        #     database_="neo4j",
-        # )
-
-        # # Loop through results and do something with them
-        # for person in records:
-        #     print(person)
-
-        # # Summary information
-        # print("The query `{query}` returned {records_count} records in {time} ms.".format(
-        #     query=summary.query, records_count=len(records),
-        #     time=summary.result_available_after,
-        # ))
         # DELETE everything
         driver.execute_query("""
                         MATCH (n)
@@ -100,6 +91,7 @@ if __name__ == "__main__":
                         """)
         data = []
         with h5py.File(filepath, mode="r") as hdf:
+            # Create the file node
             summary=driver.execute_query("""
                         CREATE (f:File {name: $obj_name, filepath:$path})
                         """,
@@ -111,7 +103,7 @@ if __name__ == "__main__":
                         MATCH (f:File {name: $filename})
                         CREATE (f)-[:holds]->(e:Experiment {name: $obj_name, hdf5_path:$hdf5_path})
                         """,
-                        obj_name=group.name.split("/")[-1],
+                        obj_name=group.name.split("/")[1],
                         hdf5_path=group.name,
                         filename = filepath.name
                         ).summary
@@ -120,19 +112,3 @@ if __name__ == "__main__":
                             time=summary.result_available_after
                         ))
                 group.visititems(visit)
-                # feap_variables = {}
-                # for var, val in group["feap_variables"].items():
-                #     if val.dtype.kind != "f":
-                #         feap_variables[var] = val.asstr()[()]
-                #     else:
-                #         feap_variables[var] = val[()]
-                # for key in group["BF_curves"].keys():
-                #     if key.startswith("Curve_"):
-                #         intermed = {}
-                #         intermed["simulation"] = group.name
-                #         intermed["number_of_datapoints"] = max(group["BF_curves"][key]["datapoints"].shape)
-                #         intermed["curve_id"] = int(key.lstrip("Curve_"))
-                #         intermed.update(feap_variables)
-                #         if "ma" in feap_variables.keys() and "mb" in feap_variables.keys():
-                #             intermed.update({"mat_contrast": feap_variables["mb"]/feap_variables["ma"]})
-                #         data.append(intermed)
