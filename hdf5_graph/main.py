@@ -45,29 +45,13 @@ def visit(name, object):
         # Do sth!
         # add_dataset_to_neo4j(session, object)
         if name.split("/")[-1] in ["macrofail", "Spline_Interp", "datapoints", "dt", "ca", "ma", "jb"]:
-            result=driver.execute_query("""
-            MATCH (e:Experiment)
-            WHERE $parent = e.name
-            FOREACH (ignoreMe IN CASE WHEN $value IS NULL THEN [1] ELSE [] END |
-                CREATE (e)-[:holds]->(dset:Dataset {name: $obj_name, hdf5_path: $hdf5_path})
-                // CREATE (dset:Dataset {name: $obj_name, hdf5_path: $hdf5_path})
-            )
-            FOREACH (ignoreMe IN CASE WHEN $value IS NOT NULL THEN [1] ELSE [] END |
-                MERGE (dset:Dataset {name: $obj_name, value: $value})
-                    ON CREATE
-                        SET dset.hdf5_path = $hdf5_path
-                // MATCH (dset:Dataset {name: $obj_name, value: $value})
-                CREATE (e)-[:holds]->(dset)
-            )
-            """,parent=object.parent.name.split("/")[1],
-            obj_name=object.name.split("/")[-1],
-            hdf5_path=object.name,
-            value=convert_value_to_cypher(object))
-            summary = result.summary
-            print("Created {nodes_created} nodes in {time} ms.".format(
-                        nodes_created=summary.counters.nodes_created,
-                        time=summary.result_available_after
-                    ))
+            temp = {
+                "parent" :object.parent.name.split("/")[1],
+                "obj_name":object.name.split("/")[-1],
+                "hdf5_path":object.name,
+                "value":convert_value_to_cypher(object)
+            }
+            registry.append(temp)
         else:
             pass
         return None
@@ -111,4 +95,36 @@ if __name__ == "__main__":
                             nodes_created=summary.counters.nodes_created,
                             time=summary.result_available_after
                         ))
+                registry = []
                 group.visititems(visit)
+
+                # for this experiment, put everything in the database
+
+                query = """
+                WITH $registry_list AS data
+                UNWIND data AS entry
+                MATCH (e:Experiment)
+                WHERE e.name = entry.parent
+                FOREACH (ignoreMe IN CASE WHEN entry.value IS NULL THEN [1] ELSE [] END |
+                    CREATE (e)-[:holds]->(dset:Dataset {name: entry.obj_name, hdf5_path: entry.hdf5_path})
+                )
+                FOREACH (ignoreMe IN CASE WHEN entry.value IS NOT NULL THEN [1] ELSE [] END |
+                    MERGE (dset:Dataset {name: entry.obj_name, value: entry.value})
+                        ON CREATE SET dset.hdf5_path = entry.hdf5_path
+                    MERGE (e)-[:holds]->(dset)
+                )
+                """
+
+                with driver.session() as session:
+                    result = session.run(query, registry_list=registry)
+                    summary = result.consume()
+                # Extracting summary data
+                nodes_created = summary.counters.nodes_created
+                relationships_created = summary.counters.relationships_created
+                time_taken = summary.result_available_after
+
+                # Print the summary using f-strings
+                print(f"Query executed successfully.\n"
+                    f"Nodes created: {nodes_created}\n"
+                    f"Relationships created: {relationships_created}\n"
+                    f"Time taken (ms): {time_taken}")
