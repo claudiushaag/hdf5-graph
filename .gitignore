@@ -24,3 +24,6 @@ coverage
 # pixi environments
 .pixi
 *.egg-info
+
+# HDF5
+*.h5
