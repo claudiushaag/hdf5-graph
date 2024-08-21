@@ -51,7 +51,7 @@ def visit(name, object):
                 "hdf5_path":object.name,
                 "value":convert_value_to_cypher(object)
             }
-            registry.append(temp)
+            dataset_registry.append(temp)
         else:
             pass
         return None
@@ -73,58 +73,56 @@ if __name__ == "__main__":
                         MATCH (n)
                         DETACH DELETE n
                         """)
-        data = []
+
+        dataset_registry = []
+        group_registry = []
+
         with h5py.File(filepath, mode="r") as hdf:
-            # Create the file node
-            summary=driver.execute_query("""
-                        CREATE (f:File {name: $obj_name, filepath:$path})
-                        """,
-                        obj_name=filepath.name,
-                        path=str(filepath))
             for group in hdf.values():
-                # Create the experiment node
-                summary=driver.execute_query("""
-                        MATCH (f:File {name: $filename})
-                        CREATE (f)-[:holds]->(e:Experiment {name: $obj_name, hdf5_path:$hdf5_path})
-                        """,
-                        obj_name=group.name.split("/")[1],
-                        hdf5_path=group.name,
-                        filename = filepath.name
-                        ).summary
-                print("Created {nodes_created} nodes in {time} ms.".format(
-                            nodes_created=summary.counters.nodes_created,
-                            time=summary.result_available_after
-                        ))
-                registry = []
+                group_registry.append({"obj_name": group.name.split("/")[1], "hdf5_path": group.name, "filename": filepath.name })
                 group.visititems(visit)
 
-                # for this experiment, put everything in the database
+        # Create the file node
+        driver.execute_query("""
+                CREATE (f:File {name: $obj_name, filepath:$path})
+                """,
+                obj_name=filepath.name,
+                path=str(filepath))
 
-                query = """
-                WITH $registry_list AS data
+        # Group query -> Experiment Nodes
+        group_query="""
+                WITH $group_list AS data
                 UNWIND data AS entry
-                MATCH (e:Experiment)
-                WHERE e.name = entry.parent
-                FOREACH (ignoreMe IN CASE WHEN entry.value IS NULL THEN [1] ELSE [] END |
-                    CREATE (e)-[:holds]->(dset:Dataset {name: entry.obj_name, hdf5_path: entry.hdf5_path})
-                )
-                FOREACH (ignoreMe IN CASE WHEN entry.value IS NOT NULL THEN [1] ELSE [] END |
-                    MERGE (dset:Dataset {name: entry.obj_name, value: entry.value})
-                        ON CREATE SET dset.hdf5_path = entry.hdf5_path
-                    MERGE (e)-[:holds]->(dset)
-                )
+                MATCH (f:File {name: entry.filename})
+                CREATE (f)-[:holds]->(e:Experiment {name: entry.obj_name, hdf5_path:entry.hdf5_path})
                 """
+        # Database query -> Database nodes
+        query = """
+        WITH $registry_list AS data
+        UNWIND data AS entry
+        MATCH (e:Experiment)
+        WHERE e.name = entry.parent
+        FOREACH (ignoreMe IN CASE WHEN entry.value IS NULL THEN [1] ELSE [] END |
+            CREATE (e)-[:holds]->(dset:Dataset {name: entry.obj_name, hdf5_path: entry.hdf5_path})
+        )
+        FOREACH (ignoreMe IN CASE WHEN entry.value IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (dset:Dataset {name: entry.obj_name, value: entry.value})
+                ON CREATE SET dset.hdf5_path = entry.hdf5_path
+            MERGE (e)-[:holds]->(dset)
+        )
+        """
 
-                with driver.session() as session:
-                    result = session.run(query, registry_list=registry)
-                    summary = result.consume()
-                # Extracting summary data
-                nodes_created = summary.counters.nodes_created
-                relationships_created = summary.counters.relationships_created
-                time_taken = summary.result_available_after
+        with driver.session() as session:
+            session.run(group_query, group_list=group_registry)
+            result = session.run(query, registry_list=dataset_registry)
+            summary = result.consume()
+        # Extracting summary data
+        nodes_created = summary.counters.nodes_created
+        relationships_created = summary.counters.relationships_created
+        time_taken = summary.result_available_after
 
-                # Print the summary using f-strings
-                print(f"Query executed successfully.\n"
-                    f"Nodes created: {nodes_created}\n"
-                    f"Relationships created: {relationships_created}\n"
-                    f"Time taken (ms): {time_taken}")
+        # Print the summary using f-strings
+        print(f"Query executed successfully.\n"
+            f"Nodes created: {nodes_created}\n"
+            f"Relationships created: {relationships_created}\n"
+            f"Time taken (ms): {time_taken}")
