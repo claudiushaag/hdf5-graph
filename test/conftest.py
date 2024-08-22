@@ -4,13 +4,14 @@ from neo4j import GraphDatabase
 # Define the URI and authentication for the Neo4j test database
 NEO4J_URI = "neo4j://localhost"
 AUTH = ("neo4j", "neo4jadmin")
+DATABASE = "testing"
 
 @pytest.fixture(scope="session")
 def driver():
     """
     Pytest fixture to create and close the Neo4j driver for the session.
     """
-    driver = GraphDatabase.driver(NEO4J_URI, auth=AUTH)
+    driver = GraphDatabase.driver(NEO4J_URI, auth=AUTH, database=DATABASE)
     yield driver
     driver.close()
 
