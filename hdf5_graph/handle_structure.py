@@ -9,7 +9,7 @@ def put_flat_hdf5_in_neo4j(
     session: neo4j.Session,
     exclude_datasets: list = [],
     exclude_paths: list = [],
-    connect_to_filepath: Path =None
+    connect_to_filepath: list[Path] =None
 ):
     """
     Put all of the contents of the hdf5 file into a neo4j graph database, supplied by session.
@@ -25,11 +25,11 @@ def put_flat_hdf5_in_neo4j(
     """
 
     # DELETE everything
-    if not connect_to_filepath:
-        session.run("""
-                        MATCH (n)
-                        DETACH DELETE n
-                        """)
+    # if not connect_to_filepath:
+    #     session.run("""
+    #                     MATCH (n)
+    #                     DETACH DELETE n
+    #                     """)
 
     dataset_registry = []
     group_registry = []
@@ -123,11 +123,16 @@ def put_flat_hdf5_in_neo4j(
         f"Query executed successfully.\n"
         f"Nodes created: {nodes_created}\n"
         f"Relationships created: {relationships_created}\n"
-        f"Time taken (ms): {time_taken}"
+        f"Time taken (ms): {time_taken}\n"
+        f"--------------------------------------------------"
     )
 
     if connect_to_filepath:
-        result = session.run("MATCH (f:File {filepath: $filepath}), (c{filepath: $connect_path}) CREATE (f)-[:depends_on]->(c)", filepath=str(hdf5_filepath), connect_path=str(connect_to_filepath))
+        result = session.run("""
+                             UNWIND $connect_path AS path
+                             MATCH (f:File {filepath: $filepath}), (c{filepath: path})
+                             CREATE (f)-[:depends_on]->(c)
+                            """, filepath=str(hdf5_filepath), connect_path=[str(i) for i in connect_to_filepath])
 
 if __name__ == "__main__":
     # URI examples: "neo4j://localhost", "neo4j+s://xxx.databases.neo4j.io"
@@ -137,12 +142,41 @@ if __name__ == "__main__":
 
     filepath = Path("data/ng5/id0/pre1/ng5_id0_mass_matrix.h5")
 
+    # dir_path = Path("data/ng5/id0/pre1/sim1")
+    dir_path = Path("data/ng5")
+
     with GraphDatabase.driver(URI, auth=AUTH, database=DATABASE) as driver:
-        intermed_path = Path('test/test1/test2/test3')
+        # intermed_path = [ Path('test/test1/test2/test3'), Path('test/test1/test2/test4'), Path('test/test1/test2/test5') ]
         with driver.session() as session:
             session.run("""
                         MATCH (n)
                         DETACH DELETE n
                         """)
-            session.run("CREATE (:File {filepath:$filepath})", filepath=str(intermed_path))
-            put_flat_hdf5_in_neo4j(filepath, session, connect_to_filepath=intermed_path)
+
+            def find_h5_files(path, level=1, accumulated_files=None):
+                # Initialize a list for the current level if it doesn't exist
+                # if level not in h5_files_dict:
+                #     h5_files_dict[level] = []
+
+                # If accumulated_files is None, create an empty list
+                if accumulated_files is None:
+                    accumulated_files = []
+
+                # Find all .h5 files in the current directory
+                current_files = list(path.glob('*.h5'))
+                # accumulated_files.extend(current_files)
+
+                # Add all accumulated .h5 files to the current level
+                for i in current_files:
+                    put_flat_hdf5_in_neo4j(i, session, connect_to_filepath=accumulated_files)
+
+                # Recursively traverse subdirectories
+                for subdir in path.iterdir():
+                    if subdir.is_dir():
+                        # Pass down the accumulated files to the subdirectory
+                        find_h5_files(subdir, level + 1, current_files.copy())
+
+            find_h5_files(dir_path)
+
+            # session.run("UNWIND $filepath AS path CREATE (:File {filepath:path})", filepath=[str(i) for i in intermed_path])
+            # put_flat_hdf5_in_neo4j(filepath, session, connect_to_filepath=intermed_path)
