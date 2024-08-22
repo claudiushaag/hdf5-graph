@@ -3,9 +3,10 @@ import neo4j
 import h5py
 from pathlib import Path
 
+
 def convert_value_to_cypher(dataset):
     try:
-        if dataset.dtype.str == '|O':  # first strings, because also true in 2nd if
+        if dataset.dtype.str == "|O":  # first strings, because also true in 2nd if
             return dataset.asstr()[()]
         elif not dataset.shape and not dataset._is_empty:
             return dataset[()]
@@ -14,11 +15,25 @@ def convert_value_to_cypher(dataset):
     except:
         return None
 
-def put_hdf5_in_neo4j(hdf5_filepath: Path,
-                      session: neo4j.Session,
-                      exclude_datasets: list =[],
-                      exclude_paths: list =[]
-                      ):
+
+def put_hdf5_in_neo4j(
+    hdf5_filepath: Path,
+    session: neo4j.Session,
+    exclude_datasets: list = [],
+    exclude_paths: list = [],
+):
+    """
+    Put all of the contents of the hdf5 file into a neo4j graph database, supplied by session.
+
+    Args:
+        hdf5_filepath (Path): _description_
+        session (neo4j.Session): _description_
+        exclude_datasets (list, optional): _description_. Defaults to [].
+        exclude_paths (list, optional): _description_. Defaults to [].
+
+    Returns:
+        _type_: _description_
+    """
 
     # DELETE everything
     session.run("""
@@ -50,10 +65,10 @@ def put_hdf5_in_neo4j(hdf5_filepath: Path,
             # if name.split("/")[-1] in ["macrofail", "Spline_Interp", "datapoints", "dt", "ca", "ma", "jb"]:
             if "/Spline/" not in object.name:
                 temp = {
-                    "parent" :object.parent.name.split("/")[1],
-                    "obj_name":object.name.split("/")[-1],
-                    "hdf5_path":object.name,
-                    "value":convert_value_to_cypher(object)
+                    "parent": object.parent.name.split("/")[1],
+                    "obj_name": object.name.split("/")[-1],
+                    "hdf5_path": object.name,
+                    "value": convert_value_to_cypher(object),
                 }
                 dataset_registry.append(temp)
             else:
@@ -64,18 +79,26 @@ def put_hdf5_in_neo4j(hdf5_filepath: Path,
 
     with h5py.File(hdf5_filepath, mode="r") as hdf:
         for group in hdf.values():
-            group_registry.append({"obj_name": group.name.split("/")[1], "hdf5_path": group.name, "filename": hdf5_filepath.name })
+            group_registry.append(
+                {
+                    "obj_name": group.name.split("/")[1],
+                    "hdf5_path": group.name,
+                    "filename": hdf5_filepath.name,
+                }
+            )
             group.visititems(visit)
 
     # Create the file node
-    session.run("""
+    session.run(
+        """
             CREATE (f:File {name: $obj_name, filepath:$path})
             """,
-            obj_name=hdf5_filepath.name,
-            path=str(hdf5_filepath))
+        obj_name=hdf5_filepath.name,
+        path=str(hdf5_filepath),
+    )
 
     # Group query -> Experiment Nodes
-    group_query="""
+    group_query = """
             WITH $group_list AS data
             UNWIND data AS entry
             MATCH (f:File {name: entry.filename})
@@ -106,10 +129,13 @@ def put_hdf5_in_neo4j(hdf5_filepath: Path,
     time_taken = summary.result_available_after
 
     # Print the summary using f-strings
-    print(f"Query executed successfully.\n"
+    print(
+        f"Query executed successfully.\n"
         f"Nodes created: {nodes_created}\n"
         f"Relationships created: {relationships_created}\n"
-        f"Time taken (ms): {time_taken}")
+        f"Time taken (ms): {time_taken}"
+    )
+
 
 if __name__ == "__main__":
     # URI examples: "neo4j://localhost", "neo4j+s://xxx.databases.neo4j.io"
