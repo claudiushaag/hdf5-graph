@@ -21,6 +21,9 @@ def put_hdf5_in_neo4j(
     session: neo4j.Session,
     exclude_datasets: list = [],
     exclude_paths: list = [],
+    use_experiment: bool =False,
+    experiment_path: str ="/",
+    connect_to_filepath: list[Path] =None
 ):
     """
     Put all of the contents of the hdf5 file into a neo4j graph database, supplied by session.
@@ -30,16 +33,13 @@ def put_hdf5_in_neo4j(
         session (neo4j.Session): _description_
         exclude_datasets (list, optional): _description_. Defaults to [].
         exclude_paths (list, optional): _description_. Defaults to [].
+        use_experiment (bool, optional): Flag for introducing experiment nodes, derived from groups. Defaults to False.
+        experiment_path (str, optional): HDF5-Path in file to the folder of the experiment nodes. Defaults to "/".
+        connect_to_filepath (list[Path], optional): List of Filepaths, which the File node should depend on. Defaults to None.
 
     Returns:
         _type_: _description_
     """
-
-    # DELETE everything
-    session.run("""
-                    MATCH (n)
-                    DETACH DELETE n
-                    """)
 
     dataset_registry = []
     group_registry = []
@@ -64,8 +64,12 @@ def put_hdf5_in_neo4j(
             # add_dataset_to_neo4j(session, object)
             # if name.split("/")[-1] in ["macrofail", "Spline_Interp", "datapoints", "dt", "ca", "ma", "jb"]:
             if "/Spline/" not in object.name:
+                if use_experiment:
+                    parent = object.parent.name.split("/")[1]
+                else:
+                    parent = hdf5_filepath.name
                 temp = {
-                    "parent": object.parent.name.split("/")[1],
+                    "parent": parent,
                     "obj_name": object.name.split("/")[-1],
                     "hdf5_path": object.name,
                     "value": convert_value_to_cypher(object),
@@ -78,15 +82,17 @@ def put_hdf5_in_neo4j(
             return 0
 
     with h5py.File(hdf5_filepath, mode="r") as hdf:
-        for group in hdf.values():
-            group_registry.append(
-                {
-                    "obj_name": group.name.split("/")[1],
-                    "hdf5_path": group.name,
-                    "filename": hdf5_filepath.name,
-                }
-            )
-            group.visititems(visit)
+        if use_experiment:
+            for group in hdf[experiment_path].values():
+                group_registry.append(
+                    {
+                        "obj_name": group.name.split("/")[1],
+                        "hdf5_path": group.name,
+                        "filename": hdf5_filepath.name,
+                    }
+                )
+        # Go through datasets
+        hdf.visititems(visit)
 
     # Create the file node
     session.run(
@@ -108,7 +114,7 @@ def put_hdf5_in_neo4j(
     query = """
     WITH $registry_list AS data
     UNWIND data AS entry
-    MATCH (e:Experiment)
+    MATCH (e)
     WHERE e.name = entry.parent
     FOREACH (ignoreMe IN CASE WHEN entry.value IS NULL THEN [1] ELSE [] END |
         CREATE (e)-[:holds]->(dset:Dataset {name: entry.obj_name, hdf5_path: entry.hdf5_path})
@@ -120,7 +126,8 @@ def put_hdf5_in_neo4j(
     )
     """
 
-    session.run(group_query, group_list=group_registry)
+    if use_experiment:
+        session.run(group_query, group_list=group_registry)
     result = session.run(query, registry_list=dataset_registry)
     summary = result.consume()
     # Extracting summary data
@@ -135,6 +142,12 @@ def put_hdf5_in_neo4j(
         f"Relationships created: {relationships_created}\n"
         f"Time taken (ms): {time_taken}"
     )
+    if connect_to_filepath:
+        result = session.run("""
+                             UNWIND $connect_path AS path
+                             MATCH (f:File {filepath: $filepath}), (c{filepath: path})
+                             CREATE (f)-[:depends_on]->(c)
+                            """, filepath=str(hdf5_filepath), connect_path=[str(i) for i in connect_to_filepath])
 
 
 if __name__ == "__main__":
@@ -147,4 +160,8 @@ if __name__ == "__main__":
 
     with GraphDatabase.driver(URI, auth=AUTH, database=DATABASE) as driver:
         with driver.session() as session:
-            put_hdf5_in_neo4j(filepath, session)
+            session.run("""
+                        MATCH (n)
+                        DETACH DELETE n
+                        """)
+            put_hdf5_in_neo4j(filepath, session, use_experiment=True)
