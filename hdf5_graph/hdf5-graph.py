@@ -72,7 +72,10 @@ def main():
     # Parser for the 'file' command
     parser_file = subparsers.add_parser(
         'file',
-        help='Put contents of an HDF5 file into a Neo4j graph database.',
+        help="""Put all of the contents of the hdf5 file into a neo4j graph database, supplied by session.
+            This method traverses the complete hdf5-file, putting the datasets and possibly groups as 'experiments' between them in a neo4j graph.
+            Datasets will be transformed into valid Cypher datatypes if possible, also checking if there is already a node with the same name and value, and then not duplicating it, but instead creating a relationship.
+            The File node can be connected to other nodes via the connect_to_filepath list, where one supplies a list of filenames to connect to. The graph is then traversed and looks for nodes with a fitting filepath-property.""",
         parents=[common_parser]
     )
     parser_file.add_argument(
@@ -84,7 +87,11 @@ def main():
     # Parser for the 'directory' command
     parser_dir = subparsers.add_parser(
         'directory',
-        help='Traverse a directory and put all found HDF5 files into a Neo4j graph database.',
+        help="""
+            Traverse a directory, and put all found h5-files into neo4j, making them dependent on each other, based on the nesting.
+
+            Keyword arguments are supplied to the ``put_hdf5_in_neo4j`` function
+            """,
         parents=[common_parser]
     )
     parser_dir.add_argument(
