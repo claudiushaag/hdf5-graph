@@ -4,7 +4,7 @@ from neo4j import GraphDatabase
 from hdf5_graph.handle_structure import put_dir_in_neo4j
 from hdf5_graph.single_hdf5 import put_hdf5_in_neo4j
 
-def main():
+def gen_parser():
     parser = argparse.ArgumentParser(
         description="Command line interface for putting HDF5 data into a Neo4j graph database."
     )
@@ -99,6 +99,12 @@ def main():
         type=Path,
         help='Path to the directory to be traversed.'
     )
+
+    return parser
+
+def main():
+
+    parser = gen_parser()
 
     args = parser.parse_args()
 

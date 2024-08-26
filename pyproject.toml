@@ -1,7 +1,7 @@
 [project]
 authors = [{name = "Claudius Haag", email = "claudius.haag@mib.uni-stuttgart.de"}]
 dependencies = []
-description = "Add a short description here"
+description = "App for putting HDF5 data into a Neo4j graph database."
 name = "hdf5-graph"
 requires-python = ">= 3.11"
 version = "0.1.0"
@@ -43,6 +43,7 @@ sphinx = "*"
 pydata-sphinx-theme = "*"
 sphinxcontrib-mermaid = "*"
 nbsphinx = "*"
+sphinx-argparse = "*"
 
 [tool.pixi.feature.test.dependencies]
 pytest = "*"
