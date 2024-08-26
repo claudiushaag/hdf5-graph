@@ -9,7 +9,9 @@ def test_create_database(session):
     Example test case using the driver directly.
     """
     filepath = Path("data/CompleteData.h5")
-    put_hdf5_in_neo4j(filepath, session, use_experiment=True, exclude_paths=["/Spline/"])
+    put_hdf5_in_neo4j(
+        filepath, session, use_experiment=True, exclude_paths=["/Spline/"]
+    )
 
     result = session.run("""
                 MATCH (d:Dataset{name:'datapoints'})<-[:holds]-(e:Experiment)-[:holds]->(c:Dataset{name:'dt',value:0.00025})
@@ -23,6 +25,7 @@ def test_create_database(session):
                 """)
 
     assert result.single()[0] == 499, "The number of nodes is not as expected!"
+
 
 def test_handle_structure(session):
     dir_path = Path("data/ng5")

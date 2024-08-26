@@ -21,10 +21,10 @@ def put_hdf5_in_neo4j(
     session: neo4j.Session,
     exclude_datasets: list[str] = [],
     exclude_paths: list = [],
-    use_experiment: bool =False,
-    experiment_path: str ="/",
-    connect_to_filepath: list[Path] =None
-) -> None :
+    use_experiment: bool = False,
+    experiment_path: str = "/",
+    connect_to_filepath: list[Path] = None,
+) -> None:
     """
     Put all of the contents of the hdf5 file into a neo4j graph database, supplied by session.
 
@@ -66,7 +66,9 @@ def put_hdf5_in_neo4j(
         elif isinstance(object, h5py.Dataset):
             # Do sth!
             # add_dataset_to_neo4j(session, object)
-            if name.split("/")[-1] not in exclude_datasets and not any(x in object.name for x in exclude_paths):
+            if name.split("/")[-1] not in exclude_datasets and not any(
+                x in object.name for x in exclude_paths
+            ):
                 if use_experiment:
                     parent = object.parent.name.split("/")[1]
                 else:
@@ -146,11 +148,15 @@ def put_hdf5_in_neo4j(
         f"Time taken (ms): {time_taken}"
     )
     if connect_to_filepath:
-        result = session.run("""
+        result = session.run(
+            """
                              UNWIND $connect_path AS path
                              MATCH (f:File {filepath: $filepath}), (c{filepath: path})
                              CREATE (f)-[:depends_on]->(c)
-                            """, filepath=str(hdf5_filepath), connect_path=[str(i) for i in connect_to_filepath])
+                            """,
+            filepath=str(hdf5_filepath),
+            connect_path=[str(i) for i in connect_to_filepath],
+        )
 
 
 if __name__ == "__main__":
@@ -167,4 +173,6 @@ if __name__ == "__main__":
                         MATCH (n)
                         DETACH DELETE n
                         """)
-            put_hdf5_in_neo4j(filepath, session, use_experiment=True, exclude_paths=["/Spline/"])
+            put_hdf5_in_neo4j(
+                filepath, session, use_experiment=True, exclude_paths=["/Spline/"]
+            )

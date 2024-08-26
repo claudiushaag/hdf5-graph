@@ -1,10 +1,10 @@
-from hdf5_graph.single_hdf5 import put_hdf5_in_neo4j, convert_value_to_cypher
+from hdf5_graph.single_hdf5 import put_hdf5_in_neo4j
 from neo4j import GraphDatabase
 import neo4j
 from pathlib import Path
-import h5py
 
-def put_dir_in_neo4j(dir_path: Path, session: neo4j.Session, **kwargs) -> None :
+
+def put_dir_in_neo4j(dir_path: Path, session: neo4j.Session, **kwargs) -> None:
     """
     Traverse a directory, and put all found h5-files into neo4j, making them dependent on each other, based on the nesting.
 
@@ -15,7 +15,8 @@ def put_dir_in_neo4j(dir_path: Path, session: neo4j.Session, **kwargs) -> None :
         session (neo4j.Session): Open neo4j-Session.
     """
     # handle kwargs, as connected_to_filepath is set by function itself:
-    kwargs = {k:v for k,v in kwargs.items() if k != 'connect_to_filepath'}
+    kwargs = {k: v for k, v in kwargs.items() if k != "connect_to_filepath"}
+
     def _find_h5_files(path, level=1, accumulated_files=None):
         # Initialize a list for the current level if it doesn't exist
         # if level not in h5_files_dict:
@@ -26,12 +27,14 @@ def put_dir_in_neo4j(dir_path: Path, session: neo4j.Session, **kwargs) -> None :
             accumulated_files = []
 
         # Find all .h5 files in the current directory
-        current_files = list(path.glob('*.h5'))
+        current_files = list(path.glob("*.h5"))
         # accumulated_files.extend(current_files)
 
         # Add all accumulated .h5 files to the current level
         for i in current_files:
-            put_hdf5_in_neo4j(i, session, connect_to_filepath=accumulated_files, **kwargs)
+            put_hdf5_in_neo4j(
+                i, session, connect_to_filepath=accumulated_files, **kwargs
+            )
 
         # Recursively traverse subdirectories
         for subdir in path.iterdir():
@@ -43,7 +46,6 @@ def put_dir_in_neo4j(dir_path: Path, session: neo4j.Session, **kwargs) -> None :
 
 
 if __name__ == "__main__":
-
     URI = "neo4j://localhost"
     AUTH = ("neo4j", "neo4jadmin")
     DATABASE = "neo4j"

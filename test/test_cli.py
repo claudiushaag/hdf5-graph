@@ -1,24 +1,35 @@
 import subprocess
 import pytest
-from pathlib import Path
-from neo4j import GraphDatabase
 from conftest import NEO4J_URI, AUTH, DATABASE
 
 command = "hdf5_graph/hdf5-graph.py"
+
 
 def test_cli_create_database(session):
     filepath = "data/CompleteData.h5"
 
     # Run the CLI command for the 'file' subcommand
-    result = subprocess.run([
-        "python", command, "file", filepath,
-        "--use-experiment",
-        "--exclude-paths", "/Spline/",
-        "--uri", NEO4J_URI,
-        "--username", AUTH[0],
-        "--password", AUTH[1],
-        "--database", DATABASE
-    ], capture_output=True, text=True)
+    result = subprocess.run(
+        [
+            "python",
+            command,
+            "file",
+            filepath,
+            "--use-experiment",
+            "--exclude-paths",
+            "/Spline/",
+            "--uri",
+            NEO4J_URI,
+            "--username",
+            AUTH[0],
+            "--password",
+            AUTH[1],
+            "--database",
+            DATABASE,
+        ],
+        capture_output=True,
+        text=True,
+    )
 
     assert result.returncode == 0, f"CLI command failed with stderr: {result.stderr}"
 
@@ -36,17 +47,29 @@ def test_cli_create_database(session):
 
     assert query_result.single()[0] == 499, "The number of nodes is not as expected!"
 
+
 def test_cli_handle_structure(session):
     dir_path = "data/ng5"
 
     # Run the CLI command for the 'directory' subcommand
-    result = subprocess.run([
-        "python", command, "directory", dir_path,
-        "--uri", NEO4J_URI,
-        "--username", AUTH[0],
-        "--password", AUTH[1],
-        "--database", DATABASE
-    ], capture_output=True, text=True)
+    result = subprocess.run(
+        [
+            "python",
+            command,
+            "directory",
+            dir_path,
+            "--uri",
+            NEO4J_URI,
+            "--username",
+            AUTH[0],
+            "--password",
+            AUTH[1],
+            "--database",
+            DATABASE,
+        ],
+        capture_output=True,
+        text=True,
+    )
 
     assert result.returncode == 0, f"CLI command failed with stderr: {result.stderr}"
 
