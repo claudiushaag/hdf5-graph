@@ -15,7 +15,7 @@ def put_dir_in_neo4j(dir_path: Path, session: neo4j.Session, **kwargs) -> None :
         session (neo4j.Session): Open neo4j-Session.
     """
     # handle kwargs, as connected_to_filepath is set by function itself:
-    kwargs = {k:v for k,v in kwargs.items() if k != 'connected_to_filepath'}
+    kwargs = {k:v for k,v in kwargs.items() if k != 'connect_to_filepath'}
     def _find_h5_files(path, level=1, accumulated_files=None):
         # Initialize a list for the current level if it doesn't exist
         # if level not in h5_files_dict:
