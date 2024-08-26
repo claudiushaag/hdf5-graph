@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from hdf5_graph.main import put_hdf5_in_neo4j
+from hdf5_graph.single_hdf5 import put_hdf5_in_neo4j
 from hdf5_graph.handle_structure import put_dir_in_neo4j
 
 
