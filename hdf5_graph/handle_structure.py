@@ -1,4 +1,4 @@
-from main import put_hdf5_in_neo4j, convert_value_to_cypher
+from hdf5_graph.main import put_hdf5_in_neo4j, convert_value_to_cypher
 from neo4j import GraphDatabase
 import neo4j
 from pathlib import Path
