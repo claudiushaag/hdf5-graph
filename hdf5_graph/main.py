@@ -19,26 +19,30 @@ def convert_value_to_cypher(dataset):
 def put_hdf5_in_neo4j(
     hdf5_filepath: Path,
     session: neo4j.Session,
-    exclude_datasets: list = [],
+    exclude_datasets: list[str] = [],
     exclude_paths: list = [],
     use_experiment: bool =False,
     experiment_path: str ="/",
     connect_to_filepath: list[Path] =None
-):
+) -> None :
     """
     Put all of the contents of the hdf5 file into a neo4j graph database, supplied by session.
 
+    This method traverses the complete hdf5-file, putting the datasets and possibly groups as "experiments" between them in a neo4j graph.
+    Datasets will be transformed into valid Cypher datatypes if possible, also checking if there is already a node with the same name and value, and then not duplicating it, but instead creating a relationship.
+    The File node can be connected to other nodes via the connect_to_filepath list, where one supplies a list of filenames to connect to. The graph is then traversed and looks for nodes with a fitting filepath-property.
+
     Args:
-        hdf5_filepath (Path): _description_
-        session (neo4j.Session): _description_
-        exclude_datasets (list, optional): _description_. Defaults to [].
-        exclude_paths (list, optional): _description_. Defaults to [].
+        hdf5_filepath (Path): Path to hdf5 which should be transformed.
+        session (neo4j.Session): Neo4j session instance with connected DBMS.
+        exclude_datasets (list[str], optional): List of strings with names of datasets which should not be read in. Defaults to [].
+        exclude_paths (list[str], optional): List of strings with pathparts of datasets which should not be read in. Defaults to [].
         use_experiment (bool, optional): Flag for introducing experiment nodes, derived from groups. Defaults to False.
         experiment_path (str, optional): HDF5-Path in file to the folder of the experiment nodes. Defaults to "/".
         connect_to_filepath (list[Path], optional): List of Filepaths, which the File node should depend on. Defaults to None.
 
     Returns:
-        _type_: _description_
+        None:
     """
 
     dataset_registry = []
@@ -62,8 +66,7 @@ def put_hdf5_in_neo4j(
         elif isinstance(object, h5py.Dataset):
             # Do sth!
             # add_dataset_to_neo4j(session, object)
-            # if name.split("/")[-1] in ["macrofail", "Spline_Interp", "datapoints", "dt", "ca", "ma", "jb"]:
-            if "/Spline/" not in object.name:
+            if name.split("/")[-1] not in exclude_datasets and not any(x in object.name for x in exclude_paths):
                 if use_experiment:
                     parent = object.parent.name.split("/")[1]
                 else:
@@ -164,4 +167,4 @@ if __name__ == "__main__":
                         MATCH (n)
                         DETACH DELETE n
                         """)
-            put_hdf5_in_neo4j(filepath, session, use_experiment=True)
+            put_hdf5_in_neo4j(filepath, session, use_experiment=True, exclude_paths=["/Spline/"])

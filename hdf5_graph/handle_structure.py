@@ -4,14 +4,18 @@ import neo4j
 from pathlib import Path
 import h5py
 
-def put_dir_in_neo4j(dir_path: Path, session: neo4j.Session):
+def put_dir_in_neo4j(dir_path: Path, session: neo4j.Session, **kwargs) -> None :
     """
     Traverse a directory, and put all found h5-files into neo4j, making them dependent on each other, based on the nesting.
+
+    Keyword arguments are supplied to the ``put_hdf5_in_neo4j`` function
 
     Args:
         dir_path (Path): Path to directory, which should be traversed.
         session (neo4j.Session): Open neo4j-Session.
     """
+    # handle kwargs, as connected_to_filepath is set by function itself:
+    kwargs = {k:v for k,v in kwargs.items() if k != 'connected_to_filepath'}
     def _find_h5_files(path, level=1, accumulated_files=None):
         # Initialize a list for the current level if it doesn't exist
         # if level not in h5_files_dict:
@@ -27,7 +31,7 @@ def put_dir_in_neo4j(dir_path: Path, session: neo4j.Session):
 
         # Add all accumulated .h5 files to the current level
         for i in current_files:
-            put_hdf5_in_neo4j(i, session, connect_to_filepath=accumulated_files)
+            put_hdf5_in_neo4j(i, session, connect_to_filepath=accumulated_files, **kwargs)
 
         # Recursively traverse subdirectories
         for subdir in path.iterdir():
