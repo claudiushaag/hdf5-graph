@@ -18,6 +18,8 @@ platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
 numpy = "*"
 neo4j-python-driver = "*"
 h5py = "*"
+click = "*"
+rich = "*"
 
 [tool.pixi.pypi-dependencies]
 hdf5-graph = { path = ".", editable = true }
