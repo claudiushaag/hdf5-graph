@@ -22,6 +22,7 @@ def put_hdf5_in_neo4j(
     use_experiment: bool = False,
     experiment_path: str = "/",
     connect_to_filepath: list[Path] = None,
+    batch_size: int = 1000,
 ) -> None:
     """
     Put all of the contents of the hdf5 file into a neo4j graph database, supplied by session.
@@ -38,6 +39,7 @@ def put_hdf5_in_neo4j(
         use_experiment (bool, optional): Flag for introducing experiment nodes, derived from groups. Defaults to False.
         experiment_path (str, optional): HDF5-Path in file to the folder of the experiment nodes. Defaults to "/".
         connect_to_filepath (list[Path], optional): List of Filepaths, which the File node should depend on. Defaults to None.
+        batch_size (int, optional): Number of transactions stored in heap before commiting. Defaults to 1000.
 
     Returns:
         None:
@@ -107,41 +109,41 @@ def put_hdf5_in_neo4j(
     )
 
     # Group query -> Experiment Nodes
-    group_query = """
+    group_query = f"""
     CALL apoc.periodic.iterate(
         'UNWIND $group_list AS entry RETURN entry',
-        'MATCH (f:File {name: entry.filename})
-        CREATE (f)-[:holds]->(e:Experiment {name: entry.obj_name, hdf5_path:entry.hdf5_path})',
-        {batchSize: 1000, params: {group_list: $group_list}}
+        'MATCH (f:File {{name: entry.filename}})
+        CREATE (f)-[:holds]->(e:Experiment {{name: entry.obj_name, hdf5_path:entry.hdf5_path}})',
+        {{batchSize: $batch_size, params: {{group_list: $group_list}}}}
     )
     YIELD batches, total RETURN batches, total
     """
     # Database query -> Database nodes
-    query = """
+    query = f"""
     CALL apoc.periodic.iterate(
         'UNWIND $registry_list AS entry RETURN entry',
         'MATCH (e)
         WHERE e.name = entry.parent
         FOREACH (ignoreMe IN CASE WHEN entry.value IS NULL THEN [1] ELSE [] END |
-            CREATE (e)-[:holds]->(dset:Dataset {name: entry.obj_name, hdf5_path: entry.hdf5_path})
+            CREATE (e)-[:holds]->(dset:Dataset {{name: entry.obj_name, hdf5_path: entry.hdf5_path}})
         )
         FOREACH (ignoreMe IN CASE WHEN entry.value IS NOT NULL THEN [1] ELSE [] END |
-            MERGE (dset:Dataset {name: entry.obj_name, value: entry.value})
+            MERGE (dset:Dataset {{name: entry.obj_name, value: entry.value}})
                 ON CREATE SET dset.hdf5_path = entry.hdf5_path
             MERGE (e)-[:holds]->(dset)
         )',
-        {batchSize: 1000, params: {registry_list: $registry_list}}
+        {{batchSize: $batch_size, params: {{registry_list: $registry_list}}}}
     )
     YIELD batches, total RETURN batches, total
     """
 
     if use_experiment:
-        result = session.run(group_query, group_list=group_registry)
+        result = session.run(group_query, group_list=group_registry, batch_size=batch_size)
         for record in result:
             print(
                 f"Group Query Summary: Batches processed: {record['batches']}, Total entries processed: {record['total']}"
             )
-    result = session.run(query, registry_list=dataset_registry)
+    result = session.run(query, registry_list=dataset_registry, batch_size=batch_size)
     for record in result:
         print(
             f"Dataset Query Summary: Batches processed: {record['batches']}, Total entries processed: {record['total']}"

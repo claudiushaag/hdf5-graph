@@ -69,6 +69,12 @@ def gen_parser():
         default=None,
         help="List of file paths to which the File node should be connected.",
     )
+    common_parser.add_argument(
+        "--batchsize",
+        type=int,
+        default=1000,
+        help="Number of transactions stored in heap before commiting.",
+    )
 
     # Parser for the 'file' command
     parser_file = subparsers.add_parser(

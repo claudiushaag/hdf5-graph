@@ -3,7 +3,6 @@ from neo4j import GraphDatabase
 import neo4j
 from pathlib import Path
 
-
 def put_dir_in_neo4j(dir_path: Path, session: neo4j.Session, **kwargs) -> None:
     """
     Traverse a directory, and put all found h5-files into neo4j, making them dependent on each other, based on the nesting.
