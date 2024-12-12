@@ -10,6 +10,9 @@ version = "0.1.0"
 build-backend = "hatchling.build"
 requires = ["hatchling"]
 
+[project.scripts]
+hdf5graph = "hdf5_graph.hdf5graph:main"
+
 [tool.pixi.project]
 channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-64", "osx-arm64"]
@@ -50,6 +53,7 @@ sphinx-argparse = "*"
 [tool.pixi.feature.test.dependencies]
 pytest = "*"
 pytest-cov = "*"
+pytest-mock = "*"
 ruff = "*"
 
 [tool.pixi.environments]
