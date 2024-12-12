@@ -3,7 +3,6 @@ import neo4j
 import h5py
 from pathlib import Path
 
-
 def convert_value_to_cypher(dataset):
     try:
         if dataset.dtype.str == "|O":  # first strings, because also true in 2nd if
@@ -14,7 +13,6 @@ def convert_value_to_cypher(dataset):
             return None
     except:
         return None
-
 
 def put_hdf5_in_neo4j(
     hdf5_filepath: Path,
@@ -110,43 +108,44 @@ def put_hdf5_in_neo4j(
 
     # Group query -> Experiment Nodes
     group_query = """
-            WITH $group_list AS data
-            UNWIND data AS entry
-            MATCH (f:File {name: entry.filename})
-            CREATE (f)-[:holds]->(e:Experiment {name: entry.obj_name, hdf5_path:entry.hdf5_path})
-            """
+    CALL apoc.periodic.iterate(
+        'UNWIND $group_list AS entry RETURN entry',
+        'MATCH (f:File {name: entry.filename})
+        CREATE (f)-[:holds]->(e:Experiment {name: entry.obj_name, hdf5_path:entry.hdf5_path})',
+        {batchSize: 1000, params: {group_list: $group_list}}
+    )
+    YIELD batches, total RETURN batches, total
+    """
     # Database query -> Database nodes
     query = """
-    WITH $registry_list AS data
-    UNWIND data AS entry
-    MATCH (e)
-    WHERE e.name = entry.parent
-    FOREACH (ignoreMe IN CASE WHEN entry.value IS NULL THEN [1] ELSE [] END |
-        CREATE (e)-[:holds]->(dset:Dataset {name: entry.obj_name, hdf5_path: entry.hdf5_path})
+    CALL apoc.periodic.iterate(
+        'UNWIND $registry_list AS entry RETURN entry',
+        'MATCH (e)
+        WHERE e.name = entry.parent
+        FOREACH (ignoreMe IN CASE WHEN entry.value IS NULL THEN [1] ELSE [] END |
+            CREATE (e)-[:holds]->(dset:Dataset {name: entry.obj_name, hdf5_path: entry.hdf5_path})
+        )
+        FOREACH (ignoreMe IN CASE WHEN entry.value IS NOT NULL THEN [1] ELSE [] END |
+            MERGE (dset:Dataset {name: entry.obj_name, value: entry.value})
+                ON CREATE SET dset.hdf5_path = entry.hdf5_path
+            MERGE (e)-[:holds]->(dset)
+        )',
+        {batchSize: 1000, params: {registry_list: $registry_list}}
     )
-    FOREACH (ignoreMe IN CASE WHEN entry.value IS NOT NULL THEN [1] ELSE [] END |
-        MERGE (dset:Dataset {name: entry.obj_name, value: entry.value})
-            ON CREATE SET dset.hdf5_path = entry.hdf5_path
-        MERGE (e)-[:holds]->(dset)
-    )
+    YIELD batches, total RETURN batches, total
     """
 
     if use_experiment:
-        session.run(group_query, group_list=group_registry)
+        result = session.run(group_query, group_list=group_registry)
+        for record in result:
+            print(
+                f"Group Query Summary: Batches processed: {record['batches']}, Total entries processed: {record['total']}"
+            )
     result = session.run(query, registry_list=dataset_registry)
-    summary = result.consume()
-    # Extracting summary data
-    nodes_created = summary.counters.nodes_created
-    relationships_created = summary.counters.relationships_created
-    time_taken = summary.result_available_after
-
-    # Print the summary using f-strings
-    print(
-        f"Query executed successfully.\n"
-        f"Nodes created: {nodes_created}\n"
-        f"Relationships created: {relationships_created}\n"
-        f"Time taken (ms): {time_taken}"
-    )
+    for record in result:
+        print(
+            f"Dataset Query Summary: Batches processed: {record['batches']}, Total entries processed: {record['total']}"
+        )
     if connect_to_filepath:
         result = session.run(
             """
