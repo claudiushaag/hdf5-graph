@@ -15,7 +15,6 @@ def test_cli_create_database(session):
             command,
             "file",
             filepath,
-            "--use-experiment",
             "--exclude-paths",
             "/Spline/",
             "--uri",

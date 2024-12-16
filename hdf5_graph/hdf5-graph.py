@@ -46,21 +46,16 @@ def gen_parser():
         help="List of dataset names to exclude.",
     )
     common_parser.add_argument(
+        "--exclude-groups",
+        nargs="*",
+        default=[],
+        help="List of group names to exclude.",
+    )
+    common_parser.add_argument(
         "--exclude-paths",
         nargs="*",
         default=[],
         help="List of path parts of datasets to exclude.",
-    )
-    common_parser.add_argument(
-        "--use-experiment",
-        action="store_true",
-        help="Flag to introduce experiment nodes derived from groups.",
-    )
-    common_parser.add_argument(
-        "--experiment-path",
-        type=str,
-        default="/",
-        help="HDF5 path to the folder of experiment nodes.",
     )
     common_parser.add_argument(
         "--connect-to-filepath",
@@ -120,20 +115,20 @@ def main():
                     hdf5_filepath=args.hdf5_filepath,
                     session=session,
                     exclude_datasets=args.exclude_datasets,
+                    exclude_groups=args.exclude_groups,
                     exclude_paths=args.exclude_paths,
-                    use_experiment=args.use_experiment,
-                    experiment_path=args.experiment_path,
                     connect_to_filepath=args.connect_to_filepath,
+                    batch_size=args.batchsize
                 )
             elif args.command == "directory":
                 put_dir_in_neo4j(
                     dir_path=args.dir_path,
                     session=session,
                     exclude_datasets=args.exclude_datasets,
+                    exclude_groups=args.exclude_groups,
                     exclude_paths=args.exclude_paths,
-                    use_experiment=args.use_experiment,
-                    experiment_path=args.experiment_path,
                     connect_to_filepath=args.connect_to_filepath,
+                    batch_size=args.batchsize
                 )
 
 

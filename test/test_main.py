@@ -10,7 +10,7 @@ def test_create_database(session):
     """
     filepath = Path("data/CompleteData.h5")
     put_hdf5_in_neo4j(
-        filepath, session, use_experiment=True, exclude_paths=["/Spline/"]
+        filepath, session, exclude_paths=["/Spline/"]
     )
 
     result = session.run("""
