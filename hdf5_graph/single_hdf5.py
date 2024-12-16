@@ -18,16 +18,15 @@ def put_hdf5_in_neo4j(
     hdf5_filepath: Path,
     session: neo4j.Session,
     exclude_datasets: list[str] = [],
+    exclude_groups: list[str] = [],
     exclude_paths: list = [],
-    use_experiment: bool = False,
-    experiment_path: str = "/",
     connect_to_filepath: list[Path] = None,
     batch_size: int = 1000,
 ) -> None:
     """
     Put all of the contents of the hdf5 file into a neo4j graph database, supplied by session.
 
-    This method traverses the complete hdf5-file, putting the datasets and possibly groups as "experiments" between them in a neo4j graph.
+    This method traverses the complete hdf5-file, putting the datasets and groups between them in a neo4j graph.
     Datasets will be transformed into valid Cypher datatypes if possible, also checking if there is already a node with the same name and value, and then not duplicating it, but instead creating a relationship.
     The File node can be connected to other nodes via the connect_to_filepath list, where one supplies a list of filenames to connect to. The graph is then traversed and looks for nodes with a fitting filepath-property.
 
@@ -35,14 +34,13 @@ def put_hdf5_in_neo4j(
         hdf5_filepath (Path): Path to hdf5 which should be transformed.
         session (neo4j.Session): Neo4j session instance with connected DBMS.
         exclude_datasets (list[str], optional): List of strings with names of datasets which should not be read in. Defaults to [].
+        exclude_groups (list[str], optional): List of strings with names of groups which should not be read in. Defaults to [].
         exclude_paths (list[str], optional): List of strings with pathparts of datasets which should not be read in. Defaults to [].
-        use_experiment (bool, optional): Flag for introducing experiment nodes, derived from groups. Defaults to False.
-        experiment_path (str, optional): HDF5-Path in file to the folder of the experiment nodes. Defaults to "/".
         connect_to_filepath (list[Path], optional): List of Filepaths, which the File node should depend on. Defaults to None.
         batch_size (int, optional): Number of transactions stored in heap before commiting. Defaults to 1000.
 
     Returns:
-        None:
+        None
     """
 
     dataset_registry = []
@@ -62,17 +60,32 @@ def put_hdf5_in_neo4j(
         """
         # decide if it is group or dataset
         if isinstance(object, h5py.Group):
+
+            if object.parent.name == "/":
+                parent = hdf5_filepath.name
+            elif name.split("/")[-1] not in exclude_groups and not any(
+                x in object.name for x in exclude_paths
+            ):
+                parent = object.parent.name
+            else:
+                return None  # Break early and not add the group to the registriy
+            group_registry.append(
+                    {
+                        "obj_name": object.name.split("/")[-1],
+                        "hdf5_path": object.name,
+                        # "filename": hdf5_filepath.name,
+                        "parent": parent
+                    }
+                )
             return None
         elif isinstance(object, h5py.Dataset):
-            # Do sth!
-            # add_dataset_to_neo4j(session, object)
             if name.split("/")[-1] not in exclude_datasets and not any(
                 x in object.name for x in exclude_paths
             ):
-                if use_experiment:
-                    parent = object.parent.name.split("/")[1]
-                else:
+                if object.parent.name == "/":
                     parent = hdf5_filepath.name
+                else:
+                    parent = object.parent.name  # save path, to check for that criteria when looking for parent node
                 temp = {
                     "parent": parent,
                     "obj_name": object.name.split("/")[-1],
@@ -86,17 +99,8 @@ def put_hdf5_in_neo4j(
         else:
             return 0
 
+    # Traverse the file and gather node information
     with h5py.File(hdf5_filepath, mode="r") as hdf:
-        if use_experiment:
-            for group in hdf[experiment_path].values():
-                group_registry.append(
-                    {
-                        "obj_name": group.name.split("/")[1],
-                        "hdf5_path": group.name,
-                        "filename": hdf5_filepath.name,
-                    }
-                )
-        # Go through datasets
         hdf.visititems(visit)
 
     # Create the file node
@@ -108,22 +112,23 @@ def put_hdf5_in_neo4j(
         path=str(hdf5_filepath),
     )
 
-    # Group query -> Experiment Nodes
+    # Group query -> Group Nodes
     group_query = f"""
     CALL apoc.periodic.iterate(
         'UNWIND $group_list AS entry RETURN entry',
-        'MATCH (f:File {{name: entry.filename}})
-        CREATE (f)-[:holds]->(e:Experiment {{name: entry.obj_name, hdf5_path:entry.hdf5_path}})',
+        'MATCH (f)
+        WHERE (f:File AND f.name = entry.parent) OR (f:Group AND f.hdf5_path = entry.parent)
+        CREATE (f)-[:holds]->(e:Group {{name: entry.obj_name, hdf5_path: entry.hdf5_path}})',
         {{batchSize: $batch_size, params: {{group_list: $group_list}}}}
     )
     YIELD batches, total RETURN batches, total
     """
     # Database query -> Database nodes
-    query = f"""
+    dataset_query = f"""
     CALL apoc.periodic.iterate(
         'UNWIND $registry_list AS entry RETURN entry',
         'MATCH (e)
-        WHERE e.name = entry.parent
+        WHERE (e:Group AND e.hdf5_path = entry.parent) OR (e:File AND e.name = entry.parent)
         FOREACH (ignoreMe IN CASE WHEN entry.value IS NULL THEN [1] ELSE [] END |
             CREATE (e)-[:holds]->(dset:Dataset {{name: entry.obj_name, hdf5_path: entry.hdf5_path}})
         )
@@ -136,14 +141,17 @@ def put_hdf5_in_neo4j(
     )
     YIELD batches, total RETURN batches, total
     """
-
-    if use_experiment:
-        result = session.run(group_query, group_list=group_registry, batch_size=batch_size)
+    # To create tree structure, sort the groups depending on their depth, to create them in order
+    max_nested = max([i["hdf5_path"].count("/") for i in group_registry])
+    for t in range(1, max_nested+1):
+        groups_branch_t = [i for i in group_registry if t == i["hdf5_path"].count("/")]
+        result = session.run(group_query, group_list=groups_branch_t, batch_size=batch_size)
         for record in result:
             print(
-                f"Group Query Summary: Batches processed: {record['batches']}, Total entries processed: {record['total']}"
+                f"Tree-Group Query Summary: Branch: {t}, Batches processed: {record['batches']}, Total entries processed: {record['total']}"
             )
-    result = session.run(query, registry_list=dataset_registry, batch_size=batch_size)
+    # Add Datasets to Tree
+    result = session.run(dataset_query, registry_list=dataset_registry, batch_size=batch_size)
     for record in result:
         print(
             f"Dataset Query Summary: Batches processed: {record['batches']}, Total entries processed: {record['total']}"
@@ -151,29 +159,10 @@ def put_hdf5_in_neo4j(
     if connect_to_filepath:
         result = session.run(
             """
-                             UNWIND $connect_path AS path
-                             MATCH (f:File {filepath: $filepath}), (c{filepath: path})
-                             CREATE (f)-[:depends_on]->(c)
-                            """,
+                UNWIND $connect_path AS path
+                MATCH (f:File {filepath: $filepath}), (c{filepath: path})
+                CREATE (f)-[:depends_on]->(c)
+            """,
             filepath=str(hdf5_filepath),
             connect_path=[str(i) for i in connect_to_filepath],
         )
-
-
-if __name__ == "__main__":
-    # URI examples: "neo4j://localhost", "neo4j+s://xxx.databases.neo4j.io"
-    URI = "neo4j://localhost"
-    AUTH = ("neo4j", "neo4jadmin")
-    DATABASE = "neo4j"
-
-    filepath = Path("data/CompleteData.h5")
-
-    with GraphDatabase.driver(URI, auth=AUTH, database=DATABASE) as driver:
-        with driver.session() as session:
-            session.run("""
-                        MATCH (n)
-                        DETACH DELETE n
-                        """)
-            put_hdf5_in_neo4j(
-                filepath, session, use_experiment=True, exclude_paths=["/Spline/"]
-            )
