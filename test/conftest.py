@@ -9,8 +9,7 @@ DATABASE = "testing"
 
 @pytest.fixture(scope="session")
 def driver():
-    """
-    Pytest fixture to create and close the Neo4j driver for the session.
+    """Pytest fixture to create and close the Neo4j driver for the session.
     """
     driver = GraphDatabase.driver(NEO4J_URI, auth=AUTH, database=DATABASE)
     yield driver
@@ -19,8 +18,7 @@ def driver():
 
 @pytest.fixture(scope="function")
 def session(driver):
-    """
-    Pytest fixture to create a new session for each test function and clean up the database.
+    """Pytest fixture to create a new session for each test function and clean up the database.
     """
     with driver.session() as session:
         # Clean the database before running each test
