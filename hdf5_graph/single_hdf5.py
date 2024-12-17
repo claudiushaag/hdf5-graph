@@ -25,6 +25,7 @@ def put_hdf5_in_neo4j(
     exclude_paths: list = [],
     connect_to_filepath: list[Path] = None,
     batch_size: int = 1000,
+    transfer_attrs: bool =True,
 ) -> None:
     """Put all of the contents of the hdf5 file into a neo4j graph database, supplied by session.
 
@@ -40,6 +41,7 @@ def put_hdf5_in_neo4j(
         exclude_paths (list[str], optional): List of strings with pathparts of datasets which should not be read in. Defaults to [].
         connect_to_filepath (list[Path], optional): List of Filepaths, which the File node should depend on. Defaults to None.
         batch_size (int, optional): Number of transactions stored in heap before commiting. Defaults to 1000.
+        transfer_attrs (bool, optional): Wether the attrs of the HDF5-objects should be put into the database. Defaults to True.
 
     Returns:
         None
@@ -49,15 +51,7 @@ def put_hdf5_in_neo4j(
 
     # Create visiting method to put datasets into the registry
     def visit(name, object):
-        """Visit all items, check if it is dataset, if yes, put it into neo4j.
-
-        Args:
-            name (_type_): _description_
-            object (_type_): _description_
-
-        Returns:
-            _type_: _description_
-        """
+        """Visit all items, check if it is dataset, if yes, put it into neo4j."""
         # decide if it is group or dataset
         if isinstance(object, h5py.Group):
             if object.parent.name == "/":
@@ -74,6 +68,7 @@ def put_hdf5_in_neo4j(
                     "hdf5_path": object.name,
                     # "filename": hdf5_filepath.name,
                     "parent": parent,
+                    "attrs": dict(object.attrs)
                 }
             )
             return None
@@ -90,6 +85,7 @@ def put_hdf5_in_neo4j(
                     "obj_name": object.name.split("/")[-1],
                     "hdf5_path": object.name,
                     "value": convert_value_to_cypher(object),
+                    "attrs": dict(object.attrs)
                 }
                 dataset_registry.append(temp)
             else:
@@ -112,31 +108,37 @@ def put_hdf5_in_neo4j(
     )
 
     # Group query -> Group Nodes
-    group_query = """
+    group_query = f"""
     CALL apoc.periodic.iterate(
         'UNWIND $group_list AS entry RETURN entry',
         'MATCH (f)
         WHERE (f:File AND f.name = entry.parent) OR (f:Group AND f.hdf5_path = entry.parent)
-        CREATE (f)-[:holds]->(e:Group {name: entry.obj_name, hdf5_path: entry.hdf5_path})',
-        {batchSize: $batch_size, params: {group_list: $group_list}}
+        CREATE (f)-[:holds]->(e:Group {{name: entry.obj_name, hdf5_path: entry.hdf5_path}})
+        FOREACH (ignoreMe IN CASE WHEN $transfer_attrs THEN [1] ELSE [] END |
+            SET dset += entry.attrs
+        )
+        {{batchSize: $batch_size, params: {{group_list: $group_list}}}}
     )
     YIELD batches, total RETURN batches, total
     """
     # Database query -> Database nodes
-    dataset_query = """
+    dataset_query = f"""
     CALL apoc.periodic.iterate(
         'UNWIND $registry_list AS entry RETURN entry',
         'MATCH (e)
         WHERE (e:Group AND e.hdf5_path = entry.parent) OR (e:File AND e.name = entry.parent)
         FOREACH (ignoreMe IN CASE WHEN entry.value IS NULL THEN [1] ELSE [] END |
-            CREATE (e)-[:holds]->(dset:Dataset {name: entry.obj_name, hdf5_path: entry.hdf5_path})
+            CREATE (e)-[:holds]->(dset:Dataset {{name: entry.obj_name, hdf5_path: entry.hdf5_path}})
+            FOREACH (ignoreMe IN CASE WHEN $transfer_attrs THEN [1] ELSE [] END |
+                SET dset += entry.attrs
+            )
         )
         FOREACH (ignoreMe IN CASE WHEN entry.value IS NOT NULL THEN [1] ELSE [] END |
-            MERGE (dset:Dataset {name: entry.obj_name, value: entry.value})
+            MERGE (dset:Dataset {{name: entry.obj_name, value: entry.value}})
                 ON CREATE SET dset.hdf5_path = entry.hdf5_path
             MERGE (e)-[:holds]->(dset)
         )',
-        {batchSize: $batch_size, params: {registry_list: $registry_list}}
+        {{batchSize: $batch_size, params: {{registry_list: $registry_list}}}}
     )
     YIELD batches, total RETURN batches, total
     """
@@ -145,7 +147,7 @@ def put_hdf5_in_neo4j(
     for t in range(1, max_nested + 1):
         groups_branch_t = [i for i in group_registry if t == i["hdf5_path"].count("/")]
         result = session.run(
-            group_query, group_list=groups_branch_t, batch_size=batch_size
+            group_query, group_list=groups_branch_t, batch_size=batch_size, transfer_attrs=transfer_attrs
         )
         for record in result:
             print(
@@ -153,7 +155,7 @@ def put_hdf5_in_neo4j(
             )
     # Add Datasets to Tree
     result = session.run(
-        dataset_query, registry_list=dataset_registry, batch_size=batch_size
+        dataset_query, registry_list=dataset_registry, batch_size=batch_size, transfer_attrs=transfer_attrs
     )
     for record in result:
         print(
