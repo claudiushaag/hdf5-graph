@@ -64,20 +64,20 @@ select = [
     "E9",
     "F",
     # # pycodestyle
-    # "E",
+    "E",
     # # Pyflakes
-    # "F",
+    "F",
     # # pyupgrade
-    # "UP",
-    # # flake8-bugbear
+    "UP",
+    # flake8-bugbear
     # "B",
     # # flake8-simplify
-    # "SIM",
+    "SIM",
     # # isort
-    # "I",
+    "I",
     # # Setting for docstrings, explicit in task lint_docs_gh
     # # Pydocstyle
-    # "D",
+    "D",
     # # Augment the convention by requiring an imperative mood for all docstrings.
     # "D401",
 ]

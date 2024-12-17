@@ -1,6 +1,8 @@
 import argparse
 from pathlib import Path
+
 from neo4j import GraphDatabase
+
 from hdf5_graph.handle_structure import put_dir_in_neo4j
 from hdf5_graph.single_hdf5 import put_hdf5_in_neo4j
 
@@ -118,7 +120,7 @@ def main():
                     exclude_groups=args.exclude_groups,
                     exclude_paths=args.exclude_paths,
                     connect_to_filepath=args.connect_to_filepath,
-                    batch_size=args.batchsize
+                    batch_size=args.batchsize,
                 )
             elif args.command == "directory":
                 put_dir_in_neo4j(
@@ -128,7 +130,7 @@ def main():
                     exclude_groups=args.exclude_groups,
                     exclude_paths=args.exclude_paths,
                     connect_to_filepath=args.connect_to_filepath,
-                    batch_size=args.batchsize
+                    batch_size=args.batchsize,
                 )
 
 

@@ -1,11 +1,13 @@
-from hdf5_graph.single_hdf5 import put_hdf5_in_neo4j
-from neo4j import GraphDatabase
-import neo4j
 from pathlib import Path
 
+import neo4j
+from neo4j import GraphDatabase
+
+from hdf5_graph.single_hdf5 import put_hdf5_in_neo4j
+
+
 def put_dir_in_neo4j(dir_path: Path, session: neo4j.Session, **kwargs) -> None:
-    """
-    Traverse a directory, and put all found h5-files into neo4j, making them dependent on each other, based on the nesting.
+    """Traverse a directory, and put all found h5-files into neo4j, making them dependent on each other, based on the nesting.
 
     Keyword arguments are supplied to the ``put_hdf5_in_neo4j`` function
 

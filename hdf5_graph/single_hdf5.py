@@ -1,7 +1,8 @@
-from neo4j import GraphDatabase
-import neo4j
-import h5py
 from pathlib import Path
+
+import h5py
+import neo4j
+
 
 def convert_value_to_cypher(dataset):
     try:
@@ -11,8 +12,10 @@ def convert_value_to_cypher(dataset):
             return dataset[()]
         else:
             return None
-    except:
+    except Exception:
+        # print(f"For dataset with name {dataset.name}, the conversion did not work!")
         return None
+
 
 def put_hdf5_in_neo4j(
     hdf5_filepath: Path,
@@ -23,8 +26,7 @@ def put_hdf5_in_neo4j(
     connect_to_filepath: list[Path] = None,
     batch_size: int = 1000,
 ) -> None:
-    """
-    Put all of the contents of the hdf5 file into a neo4j graph database, supplied by session.
+    """Put all of the contents of the hdf5 file into a neo4j graph database, supplied by session.
 
     This method traverses the complete hdf5-file, putting the datasets and groups between them in a neo4j graph.
     Datasets will be transformed into valid Cypher datatypes if possible, also checking if there is already a node with the same name and value, and then not duplicating it, but instead creating a relationship.
@@ -42,14 +44,12 @@ def put_hdf5_in_neo4j(
     Returns:
         None
     """
-
     dataset_registry = []
     group_registry = []
 
     # Create visiting method to put datasets into the registry
     def visit(name, object):
-        """
-        Visit all items, check if it is dataset, if yes, put it into neo4j.
+        """Visit all items, check if it is dataset, if yes, put it into neo4j.
 
         Args:
             name (_type_): _description_
@@ -60,7 +60,6 @@ def put_hdf5_in_neo4j(
         """
         # decide if it is group or dataset
         if isinstance(object, h5py.Group):
-
             if object.parent.name == "/":
                 parent = hdf5_filepath.name
             elif name.split("/")[-1] not in exclude_groups and not any(
@@ -70,13 +69,13 @@ def put_hdf5_in_neo4j(
             else:
                 return None  # Break early and not add the group to the registriy
             group_registry.append(
-                    {
-                        "obj_name": object.name.split("/")[-1],
-                        "hdf5_path": object.name,
-                        # "filename": hdf5_filepath.name,
-                        "parent": parent
-                    }
-                )
+                {
+                    "obj_name": object.name.split("/")[-1],
+                    "hdf5_path": object.name,
+                    # "filename": hdf5_filepath.name,
+                    "parent": parent,
+                }
+            )
             return None
         elif isinstance(object, h5py.Dataset):
             if name.split("/")[-1] not in exclude_datasets and not any(
@@ -113,45 +112,49 @@ def put_hdf5_in_neo4j(
     )
 
     # Group query -> Group Nodes
-    group_query = f"""
+    group_query = """
     CALL apoc.periodic.iterate(
         'UNWIND $group_list AS entry RETURN entry',
         'MATCH (f)
         WHERE (f:File AND f.name = entry.parent) OR (f:Group AND f.hdf5_path = entry.parent)
-        CREATE (f)-[:holds]->(e:Group {{name: entry.obj_name, hdf5_path: entry.hdf5_path}})',
-        {{batchSize: $batch_size, params: {{group_list: $group_list}}}}
+        CREATE (f)-[:holds]->(e:Group {name: entry.obj_name, hdf5_path: entry.hdf5_path})',
+        {batchSize: $batch_size, params: {group_list: $group_list}}
     )
     YIELD batches, total RETURN batches, total
     """
     # Database query -> Database nodes
-    dataset_query = f"""
+    dataset_query = """
     CALL apoc.periodic.iterate(
         'UNWIND $registry_list AS entry RETURN entry',
         'MATCH (e)
         WHERE (e:Group AND e.hdf5_path = entry.parent) OR (e:File AND e.name = entry.parent)
         FOREACH (ignoreMe IN CASE WHEN entry.value IS NULL THEN [1] ELSE [] END |
-            CREATE (e)-[:holds]->(dset:Dataset {{name: entry.obj_name, hdf5_path: entry.hdf5_path}})
+            CREATE (e)-[:holds]->(dset:Dataset {name: entry.obj_name, hdf5_path: entry.hdf5_path})
         )
         FOREACH (ignoreMe IN CASE WHEN entry.value IS NOT NULL THEN [1] ELSE [] END |
-            MERGE (dset:Dataset {{name: entry.obj_name, value: entry.value}})
+            MERGE (dset:Dataset {name: entry.obj_name, value: entry.value})
                 ON CREATE SET dset.hdf5_path = entry.hdf5_path
             MERGE (e)-[:holds]->(dset)
         )',
-        {{batchSize: $batch_size, params: {{registry_list: $registry_list}}}}
+        {batchSize: $batch_size, params: {registry_list: $registry_list}}
     )
     YIELD batches, total RETURN batches, total
     """
     # To create tree structure, sort the groups depending on their depth, to create them in order
     max_nested = max([i["hdf5_path"].count("/") for i in group_registry])
-    for t in range(1, max_nested+1):
+    for t in range(1, max_nested + 1):
         groups_branch_t = [i for i in group_registry if t == i["hdf5_path"].count("/")]
-        result = session.run(group_query, group_list=groups_branch_t, batch_size=batch_size)
+        result = session.run(
+            group_query, group_list=groups_branch_t, batch_size=batch_size
+        )
         for record in result:
             print(
                 f"Tree-Group Query Summary: Branch: {t}, Batches processed: {record['batches']}, Total entries processed: {record['total']}"
             )
     # Add Datasets to Tree
-    result = session.run(dataset_query, registry_list=dataset_registry, batch_size=batch_size)
+    result = session.run(
+        dataset_query, registry_list=dataset_registry, batch_size=batch_size
+    )
     for record in result:
         print(
             f"Dataset Query Summary: Batches processed: {record['batches']}, Total entries processed: {record['total']}"
