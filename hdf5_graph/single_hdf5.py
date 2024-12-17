@@ -26,6 +26,9 @@ def put_hdf5_in_neo4j(
     connect_to_filepath: list[Path] = None,
     batch_size: int = 1000,
     transfer_attrs: bool =True,
+    parallel_group: bool = False,
+    parallel_dataset: bool = False,
+    concurrency: int = 50,
 ) -> None:
     """Put all of the contents of the hdf5 file into a neo4j graph database, supplied by session.
 
@@ -41,7 +44,10 @@ def put_hdf5_in_neo4j(
         exclude_paths (list[str], optional): List of strings with pathparts of datasets which should not be read in. Defaults to [].
         connect_to_filepath (list[Path], optional): List of Filepaths, which the File node should depend on. Defaults to None.
         batch_size (int, optional): Number of transactions stored in heap before commiting. Defaults to 1000.
-        transfer_attrs (bool, optional): Wether the attrs of the HDF5-objects should be put into the database. Defaults to True.
+        transfer_attrs (bool, optional): Whether the attrs of the HDF5-objects should be put into the database. Defaults to True.
+        parallel_group (bool, optional): Whether parallelization of the batches creating HDF5-groups should be turned on. Defaults to False.
+        parallel_dataset (bool, optional): Whether parallelization of the batches creating HDF5-datasets should be turned on. Defaults to False.
+        concurrency (int, optional): Number of concurrent tasks which are generated when using parallel. Defaults to 50.
 
     Returns:
         None
@@ -117,7 +123,7 @@ def put_hdf5_in_neo4j(
         FOREACH (ignoreMe IN CASE WHEN $transfer_attrs THEN [1] ELSE [] END |
             SET e += entry.attrs
         )',
-        {{batchSize: $batch_size, params: {{group_list: $group_list, transfer_attrs: $transfer_attrs}}}}
+        {{batchSize: $batch_size, parallel: $parallel, concurrency: $concurrency, params: {{group_list: $group_list, transfer_attrs: $transfer_attrs}}}}
     )
     YIELD batches, total, timeTaken, committedOperations, failedOperations, failedBatches, retries, errorMessages, batch, operations, wasTerminated, failedParams, updateStatistics
     RETURN batches, total, timeTaken, committedOperations, failedOperations, failedBatches, retries, errorMessages, batch, operations, wasTerminated, failedParams, updateStatistics
@@ -137,12 +143,12 @@ def put_hdf5_in_neo4j(
         FOREACH (ignoreMe IN CASE WHEN entry.value IS NOT NULL THEN [1] ELSE [] END |
             MERGE (dset:Dataset {{name: entry.obj_name, value: entry.value}})
                 ON CREATE SET dset.hdf5_path = entry.hdf5_path
-            FOREACH (ignoreMe IN CASE WHEN $set_attrs THEN [1] ELSE [] END |
+            FOREACH (ignoreMe IN CASE WHEN $transfer_attrs THEN [1] ELSE [] END |
                 SET dset += entry.attrs
             )
             MERGE (e)-[:holds]->(dset)
         )',
-        {{batchSize: $batch_size, params: {{registry_list: $registry_list, transfer_attrs: $transfer_attrs}}}}
+        {{batchSize: $batch_size, parallel: $parallel, concurrency: $concurrency, params: {{registry_list: $registry_list, transfer_attrs: $transfer_attrs}}}}
     )
     YIELD batches, total, timeTaken, committedOperations, failedOperations, failedBatches, retries, errorMessages, batch, operations, wasTerminated, failedParams, updateStatistics
     RETURN batches, total, timeTaken, committedOperations, failedOperations, failedBatches, retries, errorMessages, batch, operations, wasTerminated, failedParams, updateStatistics
@@ -152,7 +158,7 @@ def put_hdf5_in_neo4j(
     for t in range(1, max_nested + 1):
         groups_branch_t = [i for i in group_registry if t == i["hdf5_path"].count("/")]
         result = session.run(
-            group_query, group_list=groups_branch_t, batch_size=batch_size, transfer_attrs=transfer_attrs
+            group_query, group_list=groups_branch_t, batch_size=batch_size, transfer_attrs=transfer_attrs, parallel=parallel_group, concurrency=concurrency
         )
         for record in result:
             print(
@@ -174,7 +180,7 @@ def put_hdf5_in_neo4j(
             )
     # Add Datasets to Tree
     result = session.run(
-        dataset_query, registry_list=dataset_registry, batch_size=batch_size, transfer_attrs=transfer_attrs
+        dataset_query, registry_list=dataset_registry, batch_size=batch_size, transfer_attrs=transfer_attrs, parallel=parallel_dataset, concurrency=concurrency
     )
     for record in result:
         print(

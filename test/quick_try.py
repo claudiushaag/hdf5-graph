@@ -16,6 +16,8 @@ def test_create_database(session):
     put_hdf5_in_neo4j(
         filepath,
         session,
+        parallel_group=True,
+        concurrency=4
         # exclude_paths=["/Spline/"],
         # exclude_groups=["Spline"],
         # exclude_datasets=["kb"]
