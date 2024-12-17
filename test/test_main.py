@@ -3,7 +3,6 @@ from pathlib import Path
 from hdf5_graph.single_hdf5 import put_hdf5_in_neo4j
 from hdf5_graph.handle_structure import put_dir_in_neo4j
 
-
 def test_create_database(session):
     """
     Example test case using the driver directly.
@@ -25,7 +24,6 @@ def test_create_database(session):
                 """)
 
     assert result.single()[0] == 499, "The number of nodes is not as expected!"
-
 
 def test_handle_structure(session):
     dir_path = Path("data/ng5")

@@ -6,7 +6,6 @@ NEO4J_URI = "neo4j://localhost"
 AUTH = ("neo4j", "neo4jadmin")
 DATABASE = "testing"
 
-
 @pytest.fixture(scope="session")
 def driver():
     """
@@ -15,7 +14,6 @@ def driver():
     driver = GraphDatabase.driver(NEO4J_URI, auth=AUTH, database=DATABASE)
     yield driver
     driver.close()
-
 
 @pytest.fixture(scope="function")
 def session(driver):

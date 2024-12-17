@@ -1,6 +1,5 @@
 import pytest
 
-
 def test_create_node(session):
     """
     Test case for creating a node in the Neo4j database.
@@ -9,7 +8,6 @@ def test_create_node(session):
     result = session.run("MATCH (n:Person {name: 'Alice'}) RETURN n.name AS name")
     record = result.single()
     assert record["name"] == "Alice"
-
 
 def test_create_relationship(session):
     """
@@ -26,7 +24,6 @@ def test_create_relationship(session):
     record = result.single()
     assert record["name1"] == "Alice"
     assert record["name2"] == "Bob"
-
 
 def test_query_with_driver(driver):
     """
