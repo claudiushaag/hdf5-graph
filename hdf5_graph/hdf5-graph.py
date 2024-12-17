@@ -72,6 +72,35 @@ def gen_parser():
         default=1000,
         help="Number of transactions stored in heap before commiting.",
     )
+    common_parser.add_argument(
+        "--transfer_attrs",
+        action="store_true",
+        help="Activates the copying of attrs of the HDF5-objects into the database.",
+    )
+    common_parser.add_argument(
+        "--no-transfer_attrs",
+        action="store_false",
+        help="Deactivates the copying of attrs of the HDF5-objects into the database.",
+    )
+    common_parser.set_defaults(transfer_attrs=True)
+    common_parser.add_argument(
+        "--parallel_group",
+        action="store_true",
+        default=False,
+        help="Activate parallelization of the batches creating HDF5-groups.",
+    )
+    common_parser.add_argument(
+        "--parallel_dataset",
+        action="store_true",
+        default=False,
+        help="Activate parallelization of the batches creating HDF5-datasets.",
+    )
+    common_parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=50,
+        help="Number of concurrent tasks which are generated when using parallel.",
+    )
 
     # Parser for the 'file' command
     parser_file = subparsers.add_parser(
@@ -121,6 +150,10 @@ def main():
                     exclude_paths=args.exclude_paths,
                     connect_to_filepath=args.connect_to_filepath,
                     batch_size=args.batchsize,
+                    transfer_attrs=args.transfer_attrs,
+                    parallel_group=args.parallel_group,
+                    parallel_dataset=args.parallel_dataset,
+                    concurrency=args.concurrency,
                 )
             elif args.command == "directory":
                 put_dir_in_neo4j(
@@ -131,6 +164,10 @@ def main():
                     exclude_paths=args.exclude_paths,
                     connect_to_filepath=args.connect_to_filepath,
                     batch_size=args.batchsize,
+                    transfer_attrs=args.transfer_attrs,
+                    parallel_group=args.parallel_group,
+                    parallel_dataset=args.parallel_dataset,
+                    concurrency=args.concurrency,
                 )
 
 
