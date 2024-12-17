@@ -25,6 +25,10 @@ def put_hdf5_in_neo4j(
     exclude_paths: list = [],
     connect_to_filepath: list[Path] = None,
     batch_size: int = 1000,
+    transfer_attrs: bool =True,
+    parallel_group: bool = False,
+    parallel_dataset: bool = False,
+    concurrency: int = 50,
 ) -> None:
     """Put all of the contents of the hdf5 file into a neo4j graph database, supplied by session.
 
@@ -40,6 +44,10 @@ def put_hdf5_in_neo4j(
         exclude_paths (list[str], optional): List of strings with pathparts of datasets which should not be read in. Defaults to [].
         connect_to_filepath (list[Path], optional): List of Filepaths, which the File node should depend on. Defaults to None.
         batch_size (int, optional): Number of transactions stored in heap before commiting. Defaults to 1000.
+        transfer_attrs (bool, optional): Whether the attrs of the HDF5-objects should be put into the database. Defaults to True.
+        parallel_group (bool, optional): Whether parallelization of the batches creating HDF5-groups should be turned on. Defaults to False.
+        parallel_dataset (bool, optional): Whether parallelization of the batches creating HDF5-datasets should be turned on. Defaults to False.
+        concurrency (int, optional): Number of concurrent tasks which are generated when using parallel. Defaults to 50.
 
     Returns:
         None
@@ -49,15 +57,7 @@ def put_hdf5_in_neo4j(
 
     # Create visiting method to put datasets into the registry
     def visit(name, object):
-        """Visit all items, check if it is dataset, if yes, put it into neo4j.
-
-        Args:
-            name (_type_): _description_
-            object (_type_): _description_
-
-        Returns:
-            _type_: _description_
-        """
+        """Visit all items, check if it is dataset, if yes, put it into neo4j."""
         # decide if it is group or dataset
         if isinstance(object, h5py.Group):
             if object.parent.name == "/":
@@ -74,6 +74,7 @@ def put_hdf5_in_neo4j(
                     "hdf5_path": object.name,
                     # "filename": hdf5_filepath.name,
                     "parent": parent,
+                    "attrs": dict(object.attrs)
                 }
             )
             return None
@@ -90,6 +91,7 @@ def put_hdf5_in_neo4j(
                     "obj_name": object.name.split("/")[-1],
                     "hdf5_path": object.name,
                     "value": convert_value_to_cypher(object),
+                    "attrs": dict(object.attrs)
                 }
                 dataset_registry.append(temp)
             else:
@@ -112,52 +114,91 @@ def put_hdf5_in_neo4j(
     )
 
     # Group query -> Group Nodes
-    group_query = """
+    group_query = f"""
     CALL apoc.periodic.iterate(
         'UNWIND $group_list AS entry RETURN entry',
         'MATCH (f)
         WHERE (f:File AND f.name = entry.parent) OR (f:Group AND f.hdf5_path = entry.parent)
-        CREATE (f)-[:holds]->(e:Group {name: entry.obj_name, hdf5_path: entry.hdf5_path})',
-        {batchSize: $batch_size, params: {group_list: $group_list}}
+        CREATE (f)-[:holds]->(e:Group {{name: entry.obj_name, hdf5_path: entry.hdf5_path}})
+        FOREACH (ignoreMe IN CASE WHEN $transfer_attrs THEN [1] ELSE [] END |
+            SET e += entry.attrs
+        )',
+        {{batchSize: $batch_size, parallel: $parallel, concurrency: $concurrency, params: {{group_list: $group_list, transfer_attrs: $transfer_attrs}}}}
     )
-    YIELD batches, total RETURN batches, total
+    YIELD batches, total, timeTaken, committedOperations, failedOperations, failedBatches, retries, errorMessages, batch, operations, wasTerminated, failedParams, updateStatistics
+    RETURN batches, total, timeTaken, committedOperations, failedOperations, failedBatches, retries, errorMessages, batch, operations, wasTerminated, failedParams, updateStatistics
     """
     # Database query -> Database nodes
-    dataset_query = """
+    dataset_query = f"""
     CALL apoc.periodic.iterate(
         'UNWIND $registry_list AS entry RETURN entry',
         'MATCH (e)
         WHERE (e:Group AND e.hdf5_path = entry.parent) OR (e:File AND e.name = entry.parent)
         FOREACH (ignoreMe IN CASE WHEN entry.value IS NULL THEN [1] ELSE [] END |
-            CREATE (e)-[:holds]->(dset:Dataset {name: entry.obj_name, hdf5_path: entry.hdf5_path})
+            CREATE (e)-[:holds]->(dset:Dataset {{name: entry.obj_name, hdf5_path: entry.hdf5_path}})
+            FOREACH (ignoreMe IN CASE WHEN $transfer_attrs THEN [1] ELSE [] END |
+                SET dset += entry.attrs
+            )
         )
         FOREACH (ignoreMe IN CASE WHEN entry.value IS NOT NULL THEN [1] ELSE [] END |
-            MERGE (dset:Dataset {name: entry.obj_name, value: entry.value})
+            MERGE (dset:Dataset {{name: entry.obj_name, value: entry.value}})
                 ON CREATE SET dset.hdf5_path = entry.hdf5_path
+            FOREACH (ignoreMe IN CASE WHEN $transfer_attrs THEN [1] ELSE [] END |
+                SET dset += entry.attrs
+            )
             MERGE (e)-[:holds]->(dset)
         )',
-        {batchSize: $batch_size, params: {registry_list: $registry_list}}
+        {{batchSize: $batch_size, parallel: $parallel, concurrency: $concurrency, params: {{registry_list: $registry_list, transfer_attrs: $transfer_attrs}}}}
     )
-    YIELD batches, total RETURN batches, total
+    YIELD batches, total, timeTaken, committedOperations, failedOperations, failedBatches, retries, errorMessages, batch, operations, wasTerminated, failedParams, updateStatistics
+    RETURN batches, total, timeTaken, committedOperations, failedOperations, failedBatches, retries, errorMessages, batch, operations, wasTerminated, failedParams, updateStatistics
     """
     # To create tree structure, sort the groups depending on their depth, to create them in order
     max_nested = max([i["hdf5_path"].count("/") for i in group_registry])
     for t in range(1, max_nested + 1):
         groups_branch_t = [i for i in group_registry if t == i["hdf5_path"].count("/")]
         result = session.run(
-            group_query, group_list=groups_branch_t, batch_size=batch_size
+            group_query, group_list=groups_branch_t, batch_size=batch_size, transfer_attrs=transfer_attrs, parallel=parallel_group, concurrency=concurrency
         )
         for record in result:
             print(
-                f"Tree-Group Query Summary: Branch: {t}, Batches processed: {record['batches']}, Total entries processed: {record['total']}"
+                f"--- Tree-Group Query Summary of Branch {t} ---\n"
+                f"Batches Processed      : {record['batches']}\n"
+                f"Total Entries          : {record['total']}\n"
+                f"Time Taken (ms)        : {record['timeTaken']}\n"
+                f"Committed Operations   : {record['committedOperations']}\n"
+                f"Failed Operations      : {record['failedOperations']}\n"
+                f"Failed Batches         : {record['failedBatches']}\n"
+                f"Retries                : {record['retries']}\n"
+                f"Error Messages         : {record['errorMessages']}\n"
+                f"Batch Details          : {record['batch']}\n"
+                f"Operations             : {record['operations']}\n"
+                f"Was Terminated         : {record['wasTerminated']}\n"
+                f"Failed Parameters      : {record['failedParams']}\n"
+                f"Update Statistics      : {record['updateStatistics']}\n"
+                f"--------------------------------------------------------"
             )
     # Add Datasets to Tree
     result = session.run(
-        dataset_query, registry_list=dataset_registry, batch_size=batch_size
+        dataset_query, registry_list=dataset_registry, batch_size=batch_size, transfer_attrs=transfer_attrs, parallel=parallel_dataset, concurrency=concurrency
     )
     for record in result:
         print(
-            f"Dataset Query Summary: Batches processed: {record['batches']}, Total entries processed: {record['total']}"
+            f"--- Dataset Query Summary ---\n"
+            f"Batches Processed      : {record['batches']}\n"
+            f"Total Entries          : {record['total']}\n"
+            f"Time Taken (ms)        : {record['timeTaken']}\n"
+            f"Committed Operations   : {record['committedOperations']}\n"
+            f"Failed Operations      : {record['failedOperations']}\n"
+            f"Failed Batches         : {record['failedBatches']}\n"
+            f"Retries                : {record['retries']}\n"
+            f"Error Messages         : {record['errorMessages']}\n"
+            f"Batch Details          : {record['batch']}\n"
+            f"Operations             : {record['operations']}\n"
+            f"Was Terminated         : {record['wasTerminated']}\n"
+            f"Failed Parameters      : {record['failedParams']}\n"
+            f"Update Statistics      : {record['updateStatistics']}\n"
+            f"--------------------------------------------------------"
         )
     if connect_to_filepath:
         result = session.run(
